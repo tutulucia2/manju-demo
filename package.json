@@ -1,0 +1,10 @@
+{
+  "name": "manju-demo-ui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "漫剧项目客户演示前端界面",
+  "scripts": {
+    "start": "python3 -m http.server 4173",
+    "dev": "python3 -m http.server 4173"
+  }
+}

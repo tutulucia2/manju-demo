@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: manju-agent-api
+    env: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -r agent_api/requirements.txt
+    startCommand: uvicorn agent_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health

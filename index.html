@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>漫剧剧本生成系统</title>
+    <link rel="stylesheet" href="./styles.css?v=7" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">漫</div>
+          <div class="brand-copy">
+            <strong>漫剧剧本生成系统</strong>
+            <span>V1</span>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <span class="meta-pill">Agent Workflow</span>
+          <span class="meta-pill muted">Workflow v1</span>
+        </div>
+      </header>
+
+      <main class="main-layout">
+        <section class="workspace-card">
+          <div class="loading-progress" id="loadingProgress" hidden aria-live="polite">
+            <div class="loading-progress-backdrop"></div>
+            <div class="loading-progress-dialog">
+              <div class="loading-progress-title" id="loadingProgressLabel">正在生成剧本和世界观...</div>
+              <div class="loading-progress-ring" id="loadingProgressFill">
+                <div class="loading-progress-ring-inner"></div>
+              </div>
+              <div class="loading-progress-percent" id="loadingProgressPercent">0%</div>
+              <div class="loading-progress-meta">
+                <span class="loading-progress-caption">世界与角色人物静态承载中</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stepper" id="stepper"></div>
+
+          <section class="step-panel active" data-step="1">
+            <div class="section-header">
+              <div>
+                <h1>项目基础输入</h1>
+                <p>填写项目核心信息，系统将基于此生成完整的漫剧创作方案。</p>
+              </div>
+            </div>
+
+            <div class="form-grid single">
+              <label class="field-card">
+                <span class="field-label">项目代号 / 剧组名称</span>
+                <input id="step1ProjectName" placeholder="请输入项目代号 / 剧组名称" />
+                <select id="step1ProjectNameHistory" class="field-history" data-history-target="step1ProjectName" hidden>
+                  <option value="">选择历史项目代号</option>
+                </select>
+                <small>用于标识本项目的唯一名称</small>
+              </label>
+
+              <label class="field-card tall">
+                <span class="field-label">当集核心动作 / 灵感</span>
+                <textarea id="step1CoreIdea" placeholder="请输入当集核心动作 / 灵感"></textarea>
+                <select id="step1CoreIdeaHistory" class="field-history" data-history-target="step1CoreIdea" hidden>
+                  <option value="">选择历史灵感内容</option>
+                </select>
+                <small>本集 / 本季最核心的戏剧动作或灵感来源</small>
+              </label>
+
+              <label class="field-card">
+                <span class="field-label">商业指令 / 商业方向锁定 <em class="field-optional">选填</em></span>
+                <textarea id="step1CommercialDirective" placeholder="请输入商业方向、受众画像、平台偏好"></textarea>
+                <select id="step1CommercialDirectiveHistory" class="field-history" data-history-target="step1CommercialDirective" hidden>
+                  <option value="">选择历史商业指令</option>
+                </select>
+                <small>平台方向、受众画像、商业化目标；不填写也可以继续下一步</small>
+              </label>
+
+              <label class="field-card">
+                <span class="field-label">Story Bible / 底层世界观法则 <em class="field-optional">选填</em></span>
+                <textarea id="step1StoryBible" placeholder="请输入世界观规则、设定约束"></textarea>
+                <select id="step1StoryBibleHistory" class="field-history" data-history-target="step1StoryBible" hidden>
+                  <option value="">选择历史 Story Bible</option>
+                </select>
+                <small>世界观规则、设定约束、不可违背的叙事法则；不填写也可以继续下一步</small>
+              </label>
+            </div>
+
+            <div class="footer-actions">
+              <button class="btn btn-primary" id="step1GenerateBtn">进入商业方案设计</button>
+            </div>
+            <p class="inline-feedback" id="step1Feedback"></p>
+          </section>
+
+          <section class="step-panel" data-step="2">
+            <div class="section-header">
+              <div>
+                <h1>商业方案设计</h1>
+                <p>基于你的灵感与市场数据，生成 3 套差异化商业化方案。</p>
+              </div>
+              <button class="btn btn-secondary" id="step2RegenerateBtn">重新生成</button>
+            </div>
+
+            <div class="proposal-stack" id="proposalStack">
+              <article class="proposal-card" data-select-card="a">
+                <div class="proposal-meta">
+                  <span>方案 1</span>
+                </div>
+                <h3>青春逆袭【青春青春卷】</h3>
+                <p class="proposal-hook">“以梦为马，不负韶华”</p>
+                <div class="proposal-grid">
+                  <div>
+                    <h4>核心卖点</h4>
+                    <ul>
+                      <li>青春成长</li>
+                      <li>逆境奋斗</li>
+                      <li>友情与梦想</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>平台适配</h4>
+                    <p>抖音短视频</p>
+                    <h4>受众定位</h4>
+                    <p>年轻学生及奋斗青年</p>
+                  </div>
+                </div>
+              </article>
+
+              <article class="proposal-card selected" data-select-card="b">
+                <div class="proposal-meta">
+                  <span>方案 2</span>
+                </div>
+                <h3>异界冒险【奇幻冒险】</h3>
+                <p class="proposal-hook">“邻居与友情，谱写奇幻篇章”</p>
+                <div class="proposal-grid">
+                  <div>
+                    <h4>核心卖点</h4>
+                    <ul>
+                      <li>奇幻探险</li>
+                      <li>团队合作</li>
+                      <li>险图刺激</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>平台适配</h4>
+                    <p>B 站动画</p>
+                    <h4>受众定位</h4>
+                    <p>二次元爱好者及年轻族群</p>
+                  </div>
+                </div>
+                <div class="selected-indicator">✓</div>
+              </article>
+
+              <article class="proposal-card" data-select-card="c">
+                <div class="proposal-meta">
+                  <span>方案 3</span>
+                </div>
+                <h3>幽默职场【喜剧职场】</h3>
+                <p class="proposal-hook">“职场人生，笑中有泪”</p>
+                <div class="proposal-grid">
+                  <div>
+                    <h4>核心卖点</h4>
+                    <ul>
+                      <li>职场幽默</li>
+                      <li>职场生活</li>
+                      <li>人际关系</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4>平台适配</h4>
+                    <p>微博与微信公号</p>
+                    <h4>受众定位</h4>
+                    <p>职场新人及白领</p>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="footer-actions between">
+              <button class="btn btn-light" data-prev-step="1">返回</button>
+              <button class="btn btn-primary" id="step2ConfirmBtn">确认方案，进入世界观推演</button>
+            </div>
+            <p class="inline-feedback" id="step2Feedback"></p>
+          </section>
+
+          <section class="step-panel" data-step="3">
+            <div class="section-header">
+              <div>
+                <h1>世界观推演</h1>
+                <p>George Martin 风格全季宏观架构生成。</p>
+              </div>
+              <button class="btn btn-secondary" id="step3RegenerateBtn">重新生成</button>
+            </div>
+
+            <article class="content-block long-copy" id="step3WorldContent">
+              <h3>【世界观框架】</h3>
+              <p>等待根据已选商业方案生成世界观推演结果。</p>
+            </article>
+
+            <div class="footer-actions between">
+              <button class="btn btn-light" data-prev-step="2">返回</button>
+              <button class="btn btn-primary" id="step3ConfirmBtn">确认世界，进入人物卡生成</button>
+            </div>
+            <p class="inline-feedback" id="step3Feedback"></p>
+          </section>
+
+          <section class="step-panel" data-step="4">
+            <div class="section-header">
+              <div>
+                <h1>人物卡生成</h1>
+                <p>生成角色视觉资产与服装方案矩阵，用于后续创作与客户确认。</p>
+              </div>
+              <div class="header-actions">
+                <button class="btn btn-secondary" id="step4RegenerateBtn">重新生成</button>
+              </div>
+            </div>
+
+            <div class="character-list" id="characterList">
+              <article class="character-card featured" data-character-id="ellen">
+                <div class="avatar">艾</div>
+                <div class="character-main">
+                  <div class="character-head">
+                    <div>
+                      <h3>艾伦</h3>
+                      <p class="character-subtitle">角色设定图鉴</p>
+                    </div>
+                  </div>
+                  <div class="character-grid">
+                    <div><strong>发型</strong><span>中长黑发，线条利落，偏冷感层次</span></div>
+                    <div><strong>发色</strong><span>黑色</span></div>
+                    <div><strong>瞳色</strong><span>冷灰蓝</span></div>
+                    <div><strong>显著伤痕 / 特征</strong><span>左耳有系统感银色耳饰，眉骨处有极淡旧伤痕</span></div>
+                    <div><strong>身高比例</strong><span>高挑修长，肩颈线条明显，镜头中偏强控制感比例</span></div>
+                  </div>
+                  <div class="wardrobe-block">
+                    <strong>服装方案矩阵</strong>
+                    <div class="wardrobe-cards">
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 A</span>
+                        <p>银灰风衣，深色高领，极简系统感配饰</p>
+                      </div>
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 B</span>
+                        <p>深灰作战夹克，收束腰线，黑色长靴</p>
+                      </div>
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 C</span>
+                        <p>冷白衬衫，宽松长裤，室内裸耳造型</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="character-card" data-character-id="linya">
+                <div class="avatar">林</div>
+                <div class="character-main">
+                  <div class="character-head">
+                    <div>
+                      <h3>林涯</h3>
+                      <p class="character-subtitle">角色设定图鉴</p>
+                    </div>
+                  </div>
+                  <div class="character-grid">
+                    <div><strong>发型</strong><span>短黑发，整洁向后梳理</span></div>
+                    <div><strong>发色</strong><span>黑色</span></div>
+                    <div><strong>瞳色</strong><span>深褐</span></div>
+                    <div><strong>显著伤痕 / 特征</strong><span>黑金镜框，神情克制，几乎不出现明显情绪波动</span></div>
+                    <div><strong>身高比例</strong><span>偏高，肩背平直，西装线条稳定</span></div>
+                  </div>
+                  <div class="wardrobe-block">
+                    <strong>服装方案矩阵</strong>
+                    <div class="wardrobe-cards">
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 A</span>
+                        <p>深色西装，黑金镜框，低饱和衬衫</p>
+                      </div>
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 B</span>
+                        <p>长款黑色大衣，冷光环境下的正式造型</p>
+                      </div>
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 C</span>
+                        <p>居家浅灰针织上衣，保留眼镜与极简配色</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article class="character-card" data-character-id="ruanqiu">
+                <div class="avatar">阮</div>
+                <div class="character-main">
+                  <div class="character-head">
+                    <div>
+                      <h3>阮秋</h3>
+                      <p class="character-subtitle">角色设定图鉴</p>
+                    </div>
+                  </div>
+                  <div class="character-grid">
+                    <div><strong>发型</strong><span>短碎发，偏机能感处理</span></div>
+                    <div><strong>发色</strong><span>深棕</span></div>
+                    <div><strong>瞳色</strong><span>琥珀</span></div>
+                    <div><strong>显著伤痕 / 特征</strong><span>手臂数据纹身，随身便携终端</span></div>
+                    <div><strong>身高比例</strong><span>中等偏高，动作轻快，躯干重心稳定</span></div>
+                  </div>
+                  <div class="wardrobe-block">
+                    <strong>服装方案矩阵</strong>
+                    <div class="wardrobe-cards">
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 A</span>
+                        <p>机能夹克，便携终端腰包，实验室运动鞋</p>
+                      </div>
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 B</span>
+                        <p>深色工装外套，内搭功能背心，操作手套</p>
+                      </div>
+                      <div class="wardrobe-item">
+                        <span class="wardrobe-tag">方案 C</span>
+                        <p>室内连帽卫衣，保留终端挂件与纹身露出</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="footer-actions between">
+              <button class="btn btn-light" data-prev-step="3">返回</button>
+              <button class="btn btn-primary" id="step4ConfirmBtn">确认角色，进入爆款对标</button>
+            </div>
+            <p class="inline-feedback" id="step4Feedback"></p>
+          </section>
+
+          <section class="step-panel" data-step="5">
+            <div class="section-header">
+              <div>
+                <h1>爆款对标解析</h1>
+                <p>检索同类题材爆款结构，拆解可复用节奏与爽点策略。</p>
+              </div>
+            </div>
+
+            <article class="content-block long-copy" id="step5BenchmarkContent">
+              <h3>【爆款对标】</h3>
+              <p>等待人物卡确认后生成爆款对标分析。</p>
+            </article>
+
+            <div class="footer-actions between">
+              <button class="btn btn-light" data-prev-step="4">返回</button>
+              <button class="btn btn-primary" id="step5ConfirmBtn">确认分析，生成完整脚本</button>
+            </div>
+            <p class="inline-feedback" id="step5Feedback"></p>
+          </section>
+
+          <section class="step-panel" data-step="6">
+            <div class="section-header">
+              <div>
+                <h1>完整剧本生成</h1>
+                <p>基于全部创作资料，生成可直接用于客户演示的完整漫剧脚本。</p>
+              </div>
+            </div>
+
+            <article class="script-viewer" id="step6ScriptViewer">
+              <div class="script-window-bar">
+                <span></span><span></span><span></span>
+                <em id="step6ScriptTitle">完整剧本.txt</em>
+              </div>
+              <pre id="step6ScriptText">
+# 第 1 集：被偷走的爱
+
+## 场景 1
+EXT. 雨夜高架桥 - 白天转夜
+
+艾伦盯着终端屏幕上那条被系统标红的提示：
+“你与林涯的共同记忆，已被提交回收。”
+
+她没有立刻崩溃，只是把伞收起，让雨砸在肩膀上。
+
+艾伦：
+“你删掉的不是过去，是你最怕我想起来的那一段。”
+
+## 场景 2
+INT. 记忆回收中心 - 夜
+
+林涯坐在玻璃墙后，神情像什么都没发生。
+他把一杯热茶推到艾伦面前，语气温柔得近乎不真实。
+
+林涯：
+“如果那些记忆会伤害你，忘掉也许更好。”
+
+艾伦笑了，笑意很冷。
+
+艾伦：
+“那你为什么不敢让我自己决定？”
+
+## 集尾悬念
+阮秋发来一段破解后的底层日志：
+第一条被回收的，并不是他们相爱的记忆。
+而是艾伦第一次参加‘记忆熔炉计划’的测试记录。
+              </pre>
+            </article>
+
+            <article class="content-block long-copy" id="step6SummaryContent"></article>
+
+            <div class="footer-actions between">
+              <button class="btn btn-light" data-prev-step="5">返回</button>
+              <button class="btn btn-primary">下载完整脚本</button>
+            </div>
+            <p class="inline-feedback" id="step6Feedback"></p>
+          </section>
+        </section>
+
+      </main>
+    </div>
+
+    <script src="./config.js"></script>
+    <script src="./script.js?v=20"></script>
+  </body>
+</html>
