@@ -1,213 +1,34 @@
 from __future__ import annotations
 
-import sys
-import time
-from threading import Lock, Thread
-from pathlib import Path
-from typing import Any
-
-from dotenv import load_dotenv
 from fastapi import HTTPException
 
-from agent_mapper import (
-    CharacterItem,
-    Step1Form,
-    agent_state_to_step2_view_model,
-    agent_state_to_step4_view_model,
-    build_initial_agent_state,
-    step2_selection_to_agent_update,
-    step4_characters_to_agent_update,
-)
+from agent_mapper import CharacterItem, Step1Form, build_initial_agent_state, step4_characters_to_agent_update
 
 from .store import InMemoryProjectStore, ProjectRecord
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-WRITER_ROOT = PROJECT_ROOT / "编剧"
-
-if str(WRITER_ROOT) not in sys.path:
-    sys.path.insert(0, str(WRITER_ROOT))
-
-load_dotenv(PROJECT_ROOT / ".env")
-load_dotenv(WRITER_ROOT / ".env")
-
-from core.workflow import build_writers_room_graph  # noqa: E402
-
-
-PIPELINE_RESET_STATE: dict[str, Any] = {
-    "fast_demo_mode": True,
-    "selected_commercial_plan": "",
-    "target_pmf": "",
-    "established_characters": None,
-    "system_character_cards": "",
-    "established_keyframes": None,
-    "current_genre": "",
-    "market_trend_benchmarks": "",
-    "wall_street_macro_report": "",
-    "next_agent_role": None,
-    "next_framework_id": None,
-    "societal_deadlocks": None,
-    "trauma_profiles": None,
-    "pressure_pulse_map": None,
-    "physical_asset_seeds": None,
-    "mutation_drift": None,
-    "pmf_pitch_options": "",
-    "human_feedback": "",
-    "draft_output": "",
-    "qc_retry_count": 0,
-    "qc_pass": False,
-    "hook_pass": False,
-    "aesthetic_pass": False,
-    "qc_feedback_history": [],
-    "current_status_book": {},
-    "rolling_summary": "",
-    "recent_dialogue_history": [],
-    "retrieved_meta_rules": [],
-    "human_greenlight_approved": False,
-    "wang_jing_rejected": False,
-    "wang_jing_feedback": "",
-    "scene_tension_cd": 0,
-}
-
-POST_PROPOSAL_RESET_STATE: dict[str, Any] = {
-    "story_bible": "",
-    "established_characters": None,
-    "system_character_cards": "",
-    "established_keyframes": None,
-    "current_genre": "",
-    "market_trend_benchmarks": "",
-    "next_agent_role": None,
-    "next_framework_id": None,
-    "societal_deadlocks": None,
-    "trauma_profiles": None,
-    "pressure_pulse_map": None,
-    "physical_asset_seeds": None,
-    "mutation_drift": None,
-    "draft_output": "",
-    "qc_retry_count": 0,
-    "qc_pass": False,
-    "hook_pass": False,
-    "aesthetic_pass": False,
-    "qc_feedback_history": [],
-    "current_status_book": {},
-    "rolling_summary": "",
-    "recent_dialogue_history": [],
-    "retrieved_meta_rules": [],
-    "human_greenlight_approved": False,
-    "scene_tension_cd": 0,
-}
-
-WORLD_REGEN_RESET_STATE: dict[str, Any] = dict(POST_PROPOSAL_RESET_STATE)
-
-
-class RealAgentRunner:
-    def __init__(self) -> None:
-        self._graph = None
-        self._lock = Lock()
-
-    @property
-    def graph(self):
-        if self._graph is None:
-            self._graph = build_writers_room_graph()
-        return self._graph
-
-    def config(self, project_id: str) -> dict[str, Any]:
-        return {"configurable": {"thread_id": project_id}}
-
-    def update_state(self, project_id: str, updates: dict[str, Any]) -> None:
-        self.graph.update_state(self.config(project_id), updates)
-
-    def get_state(self, project_id: str) -> dict[str, Any]:
-        state_snapshot = self.graph.get_state(self.config(project_id))
-        return dict(state_snapshot.values) if state_snapshot and getattr(state_snapshot, "values", None) else {}
-
-    def is_waiting_for_human(self, project_id: str) -> bool:
-        state_snapshot = self.graph.get_state(self.config(project_id))
-        return bool(state_snapshot and getattr(state_snapshot, "next", None))
-
-    def run_phase_one(self, project_id: str, initial_state: dict[str, Any], *, force_regenerate: bool = False) -> dict[str, Any]:
-        with self._lock:
-            existing = self.get_state(project_id)
-            if existing.get("pmf_pitch_options") and not force_regenerate:
-                return existing
-
-            if existing and force_regenerate:
-                self.graph.update_state(
-                    self.config(project_id),
-                    {
-                        "pmf_pitch_options": "",
-                        "selected_commercial_plan": "",
-                        "wang_jing_feedback": "",
-                        "wang_jing_rejected": True,
-                    },
-                )
-                for _ in self.graph.stream(None, self.config(project_id)):
-                    pass
-                return self.get_state(project_id)
-
-            for _ in self.graph.stream(initial_state, self.config(project_id)):
-                pass
-            return self.get_state(project_id)
-
-    def run_phase_two(self, project_id: str, selected_plan: str, proposal_feedback: str = "") -> dict[str, Any]:
-        with self._lock:
-            updates = {
-                "selected_commercial_plan": selected_plan,
-                "wang_jing_feedback": proposal_feedback,
-                "wang_jing_rejected": False,
-            }
-            self.graph.update_state(self.config(project_id), updates)
-            for _ in self.graph.stream(None, self.config(project_id)):
-                pass
-            return self.get_state(project_id)
-
-    def regenerate_world_phase(self, project_id: str) -> dict[str, Any]:
-        with self._lock:
-            current_state = self.get_state(project_id)
-            selected_plan = current_state.get("selected_commercial_plan", "")
-            if not selected_plan:
-                raise HTTPException(status_code=400, detail="请先确认商业方案，再重新生成世界观。")
-
-            updates = dict(WORLD_REGEN_RESET_STATE)
-            updates.update(
-                {
-                    "selected_commercial_plan": selected_plan,
-                    "wang_jing_rejected": False,
-                    "wang_jing_feedback": "",
-                    "human_greenlight_approved": False,
-                }
-            )
-            self.graph.update_state(self.config(project_id), updates, as_node="wang_jing")
-            for _ in self.graph.stream(None, self.config(project_id)):
-                pass
-            return self.get_state(project_id)
-
-    def run_phase_three(self, project_id: str) -> dict[str, Any]:
-        with self._lock:
-            for _ in self.graph.stream(None, self.config(project_id)):
-                pass
-            return self.get_state(project_id)
-
-    def run_phase_four(self, project_id: str) -> dict[str, Any]:
-        with self._lock:
-            for _ in self.graph.stream(None, self.config(project_id)):
-                pass
-            return self.get_state(project_id)
-
 
 class AgentDemoService:
+    """Safe public backend for the resume demo.
+
+    This service intentionally does not import the private writer-room engine,
+    internal prompts, or real customer data. It preserves the product workflow
+    shape so the online demo can run safely from a public repository.
+    """
+
     def __init__(self, store: InMemoryProjectStore) -> None:
         self.store = store
-        self.runner = RealAgentRunner()
-        self._benchmark_prefetching_projects: set[str] = set()
-        self._prefetching_projects: set[str] = set()
-        self._prefetch_lock = Lock()
 
     def init_project(self, form: Step1Form) -> ProjectRecord:
         project_id = form.project_name.strip()
-        state = self._build_fresh_project_state(form)
-        existing_graph_state = self.runner.get_state(project_id)
-        if existing_graph_state:
-            self.runner.update_state(project_id, state)
+        state = build_initial_agent_state(form)
+        state.update(
+            {
+                "project_id": project_id,
+                "safe_backend_mode": True,
+                "proposal_options": [],
+                "characters": [],
+            }
+        )
 
         existing_record = self.store.get(project_id)
         if existing_record:
@@ -216,30 +37,20 @@ class AgentDemoService:
 
     def get_project(self, project_id: str) -> ProjectRecord:
         record = self.store.get(project_id)
-        if record:
-            return record
-
-        existing_graph_state = self.runner.get_state(project_id)
-        if existing_graph_state:
-            return self.store.create(project_id, existing_graph_state)
-
-        raise HTTPException(status_code=404, detail=f"项目不存在: {project_id}")
+        if not record:
+            raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
+        return record
 
     def generate_proposals(self, project_id: str) -> ProjectRecord:
         record = self.get_project(project_id)
-        latest_graph_state = self.runner.get_state(project_id)
-        should_regenerate = bool(latest_graph_state.get("pmf_pitch_options"))
-        graph_state = self.runner.run_phase_one(
-            project_id,
-            record.state,
-            force_regenerate=should_regenerate,
-        )
-        if not graph_state.get("pmf_pitch_options"):
-            raise HTTPException(status_code=500, detail="真实 Agent 未返回商业方案，请检查模型配置或日志。")
-
+        state = dict(record.state)
+        proposals = self._build_proposals(state)
         return self.store.update(
             project_id,
-            state_updates=graph_state,
+            state_updates={
+                "proposal_options": proposals,
+                "pmf_pitch_options": "\n\n".join(item["raw_text"] for item in proposals),
+            },
             current_step=2,
             status="proposals_generated",
         )
@@ -253,322 +64,332 @@ class AgentDemoService:
         proposal_rejected: bool = False,
     ) -> ProjectRecord:
         if proposal_rejected:
-            raise HTTPException(status_code=400, detail="当前 API 版本暂未开放打回重做，请先选择一套方案继续。")
+            raise HTTPException(status_code=400, detail="Please select a proposal to continue.")
 
-        updates = step2_selection_to_agent_update(
-            selected_proposal_text,
-            proposal_feedback=proposal_feedback,
-            proposal_rejected=proposal_rejected,
-        )
-        updates.update(POST_PROPOSAL_RESET_STATE)
-        self.runner.update_state(project_id, updates)
-        graph_state = self.runner.run_phase_two(project_id, selected_proposal_text, proposal_feedback)
-        updated = self.store.update(
-            project_id,
-            state_updates=graph_state,
-            current_step=4,
-            status="characters_ready",
-        )
-        self._start_benchmark_prefetch(project_id)
-        return updated
-
-    def generate_world(self, project_id: str) -> ProjectRecord:
-        graph_state = self.runner.regenerate_world_phase(project_id)
-        if not graph_state.get("story_bible"):
-            raise HTTPException(status_code=500, detail="真实 Agent 未重新生成世界观，请检查模型配置或日志。")
-
+        record = self.get_project(project_id)
+        state = dict(record.state)
+        selected = selected_proposal_text.strip() or self._first_proposal_text(state)
+        world = self._build_world(state, selected)
+        characters = self._build_characters(state, selected)
         return self.store.update(
             project_id,
-            state_updates=graph_state,
-            current_step=4,
-            status="world_regenerated",
+            state_updates={
+                "selected_commercial_plan": selected,
+                "wang_jing_feedback": proposal_feedback.strip(),
+                "story_bible": world,
+                "societal_deadlocks": [
+                    "平台内容同质化导致前三秒留存变低",
+                    "角色动机弱会让爽点只剩情节堆叠",
+                    "视觉设定缺少统一资产规范会拉高制作返工",
+                ],
+                "trauma_profiles": [
+                    "主角的核心创伤来自一次公开误判",
+                    "反派的控制欲来自对失控局面的长期恐惧",
+                    "搭档角色负责把理性目标拉回情感选择",
+                ],
+                "characters": characters,
+                "established_characters": characters,
+                "system_character_cards": self._characters_to_text(characters),
+                "market_trend_benchmarks": "",
+                "draft_output": "",
+            },
+            current_step=3,
+            status="world_ready",
+        )
+
+    def generate_world(self, project_id: str) -> ProjectRecord:
+        record = self.get_project(project_id)
+        selected = record.state.get("selected_commercial_plan") or self._first_proposal_text(record.state)
+        return self.store.update(
+            project_id,
+            state_updates={"story_bible": self._build_world(record.state, selected)},
+            current_step=3,
+            status="world_generated",
         )
 
     def generate_characters(self, project_id: str) -> ProjectRecord:
         record = self.get_project(project_id)
-        latest_graph_state = self.runner.get_state(project_id)
-        merged = latest_graph_state or record.state
-        if not (merged.get("established_characters") or merged.get("system_character_cards")):
-            raise HTTPException(status_code=400, detail="真实 Agent 尚未生成人物卡，请先完成前置流程。")
-
-        updated = self.store.update(
+        selected = record.state.get("selected_commercial_plan") or self._first_proposal_text(record.state)
+        characters = record.state.get("characters") or self._build_characters(record.state, selected)
+        return self.store.update(
             project_id,
-            state_updates=merged,
+            state_updates={
+                "characters": characters,
+                "established_characters": characters,
+                "system_character_cards": self._characters_to_text(characters),
+            },
             current_step=4,
             status="characters_generated",
         )
-        self._start_benchmark_prefetch(project_id)
-        return updated
 
     def regenerate_characters(self, project_id: str) -> ProjectRecord:
-        current_state = self.runner.get_state(project_id) or self.get_project(project_id).state
-        if not current_state.get("story_bible"):
-            raise HTTPException(status_code=400, detail="请先完成人物世界观，再重新生成人物卡。")
-
-        updates = {
-            "established_characters": None,
-            "system_character_cards": "",
-            "established_keyframes": None,
-            "current_genre": "",
-            "market_trend_benchmarks": "",
-            "next_agent_role": None,
-            "next_framework_id": None,
-            "draft_output": "",
-            "qc_retry_count": 0,
-            "qc_pass": False,
-            "hook_pass": False,
-            "aesthetic_pass": False,
-            "qc_feedback_history": [],
-            "current_status_book": {},
-            "rolling_summary": "",
-            "recent_dialogue_history": [],
-            "retrieved_meta_rules": [],
-            "scene_tension_cd": 0,
-        }
-        self.runner.graph.update_state(self.runner.config(project_id), updates, as_node="george_martin")
-        graph_state = self.runner.run_phase_three(project_id)
-        if not (graph_state.get("established_characters") or graph_state.get("system_character_cards")):
-            raise HTTPException(status_code=500, detail="真实 Agent 未重新生成人物卡，请检查模型配置或日志。")
-
-        updated = self.store.update(
+        record = self.get_project(project_id)
+        characters = self._build_characters(record.state, record.state.get("selected_commercial_plan", ""), variant=True)
+        return self.store.update(
             project_id,
-            state_updates=graph_state,
+            state_updates={
+                "characters": characters,
+                "established_characters": characters,
+                "system_character_cards": self._characters_to_text(characters),
+                "market_trend_benchmarks": "",
+                "draft_output": "",
+            },
             current_step=4,
             status="characters_regenerated",
         )
-        self._start_benchmark_prefetch(project_id)
-        return updated
 
     def update_characters(self, project_id: str, characters: list[CharacterItem]) -> ProjectRecord:
         updates = step4_characters_to_agent_update(characters)
-        self.runner.graph.update_state(self.runner.config(project_id), updates)
-        latest_graph_state = self.runner.get_state(project_id)
-        merged_state = dict(latest_graph_state)
-        merged_state.update(updates)
+        normalized = updates.get("established_characters", [])
         return self.store.update(
             project_id,
-            state_updates=merged_state,
+            state_updates={
+                "characters": normalized,
+                "established_characters": normalized,
+                "system_character_cards": self._characters_to_text(normalized),
+            },
             current_step=4,
             status="characters_updated",
         )
 
     def generate_benchmarks(self, project_id: str) -> ProjectRecord:
         record = self.get_project(project_id)
-        latest_graph_state = self.runner.get_state(project_id)
-        merged = latest_graph_state or record.state
-        if not (merged.get("established_characters") or merged.get("system_character_cards")):
-            raise HTTPException(status_code=400, detail="请先完成人物卡生成，再生成爆款对标。")
-        if not merged.get("market_trend_benchmarks"):
-            if self._is_benchmark_prefetching(project_id):
-                merged = self._wait_for_prefetched_benchmarks(project_id)
-            else:
-                merged = self.runner.run_phase_three(project_id)
-        if not merged.get("market_trend_benchmarks"):
-            raise HTTPException(status_code=400, detail="真实 Agent 尚未产出爆款对标结果。")
-
-        updated = self.store.update(
+        benchmarks = self._build_benchmarks(record.state)
+        return self.store.update(
             project_id,
-            state_updates=merged,
+            state_updates={"market_trend_benchmarks": benchmarks},
             current_step=5,
             status="benchmarks_generated",
         )
-        self._start_script_prefetch(project_id, delay_seconds=1.5)
-        return updated
 
     def generate_script(self, project_id: str) -> ProjectRecord:
         record = self.get_project(project_id)
-        latest_graph_state = self.runner.get_state(project_id)
-        merged = latest_graph_state or record.state
-        if not merged.get("market_trend_benchmarks"):
-            raise HTTPException(status_code=400, detail="请先完成爆款对标分析，再生成完整剧本。")
-        if not merged.get("draft_output"):
-            merged = self.runner.run_phase_four(project_id)
-        if not merged.get("draft_output"):
-            raise HTTPException(status_code=400, detail="真实 Agent 尚未生成剧本。")
-
+        if not record.state.get("market_trend_benchmarks"):
+            record = self.generate_benchmarks(project_id)
+        script = self._build_script(record.state)
         return self.store.update(
             project_id,
-            state_updates=merged,
+            state_updates={
+                "draft_output": script,
+                "rolling_summary": "已完成商业方案、世界观、角色卡、爆款对标与第一集剧本初稿生成。",
+                "current_status_book": {
+                    "mode": "safe_public_backend",
+                    "privacy": "no private prompts or customer data exposed",
+                    "next": "replace generator methods with an LLM adapter when API keys are configured",
+                },
+            },
             current_step=6,
             status="script_generated",
         )
 
     def regenerate_script(self, project_id: str) -> ProjectRecord:
-        current_state = self.runner.get_state(project_id) or self.get_project(project_id).state
-        if not current_state.get("market_trend_benchmarks"):
-            raise HTTPException(status_code=400, detail="请先完成爆款对标分析，再重新生成剧本。")
+        return self.generate_script(project_id)
 
-        updates = {
-            "next_agent_role": None,
-            "next_framework_id": None,
-            "mutation_drift": None,
-            "draft_output": "",
-            "qc_retry_count": 0,
-            "qc_pass": False,
-            "hook_pass": False,
-            "aesthetic_pass": False,
-            "qc_feedback_history": [],
-            "current_status_book": {},
-            "rolling_summary": "",
-            "recent_dialogue_history": [],
-            "retrieved_meta_rules": [],
-            "scene_tension_cd": 0,
-        }
-        self.runner.graph.update_state(self.runner.config(project_id), updates, as_node="market_spy")
-        merged = self.runner.run_phase_four(project_id)
-        if not merged.get("draft_output"):
-            raise HTTPException(status_code=500, detail="真实 Agent 未重新生成剧本，请检查模型配置或日志。")
-
-        return self.store.update(
-            project_id,
-            state_updates=merged,
-            current_step=6,
-            status="script_regenerated",
-        )
-
-    def _start_script_prefetch(self, project_id: str, *, delay_seconds: float = 0.0) -> None:
-        with self._prefetch_lock:
-            if project_id in self._prefetching_projects:
-                return
-            self._prefetching_projects.add(project_id)
-
-        worker = Thread(
-            target=self._prefetch_script_worker,
-            args=(project_id, delay_seconds),
-            daemon=True,
-            name=f"script-prefetch-{project_id}",
-        )
-        worker.start()
-
-    def _is_benchmark_prefetching(self, project_id: str) -> bool:
-        with self._prefetch_lock:
-            return project_id in self._benchmark_prefetching_projects
-
-    def _wait_for_prefetched_benchmarks(self, project_id: str, *, timeout_seconds: float = 180.0) -> dict[str, Any]:
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            latest_graph_state = self.runner.get_state(project_id)
-            if latest_graph_state.get("market_trend_benchmarks"):
-                return latest_graph_state
-
-            record = self.store.get(project_id)
-            if record and record.state.get("market_trend_benchmarks"):
-                return record.state
-
-            if not self._is_benchmark_prefetching(project_id):
-                break
-            time.sleep(0.5)
-
-        return self.runner.get_state(project_id) or self.get_project(project_id).state
-
-    def _start_benchmark_prefetch(self, project_id: str) -> None:
-        with self._prefetch_lock:
-            if project_id in self._benchmark_prefetching_projects:
-                return
-            self._benchmark_prefetching_projects.add(project_id)
-
-        worker = Thread(
-            target=self._prefetch_benchmark_worker,
-            args=(project_id,),
-            daemon=True,
-            name=f"benchmark-prefetch-{project_id}",
-        )
-        worker.start()
-
-    def _prefetch_benchmark_worker(self, project_id: str) -> None:
-        try:
-            latest_graph_state = self.runner.get_state(project_id)
-            if latest_graph_state.get("market_trend_benchmarks"):
-                self._start_script_prefetch(project_id, delay_seconds=1.5)
-                return
-
-            if not (latest_graph_state.get("established_characters") or latest_graph_state.get("system_character_cards")):
-                return
-
-            merged = self.runner.run_phase_three(project_id)
-            if merged.get("market_trend_benchmarks"):
-                self.store.update(
-                    project_id,
-                    state_updates=merged,
-                    current_step=4,
-                    status="benchmarks_prefetched",
-                )
-                self._start_script_prefetch(project_id, delay_seconds=1.5)
-        except Exception as exc:
-            print(f"[Agent API] 后台预生成爆款对标失败({project_id}): {exc}")
-        finally:
-            with self._prefetch_lock:
-                self._benchmark_prefetching_projects.discard(project_id)
-
-    def _prefetch_script_worker(self, project_id: str, delay_seconds: float = 0.0) -> None:
-        try:
-            if delay_seconds > 0:
-                time.sleep(delay_seconds)
-
-            latest_graph_state = self.runner.get_state(project_id)
-            if latest_graph_state.get("draft_output"):
-                return
-
-            merged = self.runner.run_phase_four(project_id)
-            if merged.get("draft_output"):
-                self.store.update(
-                    project_id,
-                    state_updates=merged,
-                    current_step=6,
-                    status="script_prefetched",
-                )
-        except Exception as exc:
-            print(f"[Agent API] 后台预生成剧本失败({project_id}): {exc}")
-        finally:
-            with self._prefetch_lock:
-                self._prefetching_projects.discard(project_id)
-
-    def build_state_view(self, record: ProjectRecord) -> dict[str, Any]:
-        step2 = agent_state_to_step2_view_model(record.state).to_dict()
-        step4 = agent_state_to_step4_view_model(record.state).to_dict()
+    def build_state_view(self, record: ProjectRecord) -> dict:
+        state = record.state
         return {
             "projectId": record.project_id,
             "currentStep": record.current_step,
             "status": record.status,
             "step1": {
-                "projectName": record.state.get("thread_id", ""),
-                "coreIdea": record.state.get("current_task", ""),
-                "commercialDirective": record.state.get("commercial_directive", ""),
-                "storyBibleInput": record.state.get("story_bible", ""),
+                "projectName": state.get("thread_id", ""),
+                "coreIdea": state.get("current_task", ""),
+                "commercialDirective": state.get("commercial_directive", ""),
+                "storyBibleInput": state.get("established_bible", ""),
             },
-            "step2": step2,
+            "step2": {
+                "proposal_options": state.get("proposal_options", []),
+                "selected_proposal_text": state.get("selected_commercial_plan", ""),
+                "selected_proposal_id": self._selected_proposal_id(state),
+                "raw_pitch_text": state.get("pmf_pitch_options", ""),
+            },
             "step3": {
-                "worldOutline": record.state.get("story_bible", ""),
-                "societalDeadlocks": record.state.get("societal_deadlocks"),
-                "traumaProfiles": record.state.get("trauma_profiles"),
-                "selectedCommercialPlan": record.state.get("selected_commercial_plan", ""),
+                "worldOutline": state.get("story_bible", ""),
+                "societalDeadlocks": state.get("societal_deadlocks"),
+                "traumaProfiles": state.get("trauma_profiles"),
+                "selectedCommercialPlan": state.get("selected_commercial_plan", ""),
             },
-            "step4": step4,
+            "step4": {
+                "characters": state.get("characters") or state.get("established_characters") or [],
+                "raw_character_cards_text": state.get("system_character_cards", ""),
+            },
             "step5": {
-                "benchmarkCases": record.state.get("market_trend_benchmarks", ""),
+                "benchmarkCases": state.get("market_trend_benchmarks", ""),
             },
             "step6": {
-                "scriptText": record.state.get("draft_output", ""),
-                "rollingSummary": record.state.get("rolling_summary", ""),
-                "statusBook": record.state.get("current_status_book", {}),
+                "scriptText": state.get("draft_output", ""),
+                "rollingSummary": state.get("rolling_summary", ""),
+                "statusBook": state.get("current_status_book", {}),
             },
-            "rawState": record.state,
+            "rawState": {
+                "safe_backend_mode": True,
+                "status": state.get("status", record.status),
+            },
         }
 
-    def _infer_step(self, state: dict[str, Any]) -> int:
-        if state.get("draft_output"):
-            return 6
-        if state.get("market_trend_benchmarks"):
-            return 5
-        if state.get("established_characters") or state.get("system_character_cards"):
-            return 4
-        if state.get("story_bible"):
-            return 3
-        if state.get("pmf_pitch_options"):
-            return 2
-        return 1
+    def _build_proposals(self, state: dict) -> list[dict]:
+        project = state.get("thread_id", "未命名项目")
+        idea = state.get("current_task", "一个高概念漫剧创意")
+        directive = state.get("commercial_directive") or "竖屏漫剧，强钩子，高反转，适合面试演示"
+        templates = [
+            (
+                "a",
+                "误判重启局",
+                "主角被系统性误判后，用一次次反转把对手拖进自己设计的局。",
+                ["前三秒冤屈钩子", "中段身份反转", "结尾强悬念", "角色资产可复用"],
+                "抖音 / 快手竖屏短剧",
+                "偏爱强爽点、快节奏反转的泛女性与都市情绪受众",
+            ),
+            (
+                "b",
+                "黑箱共谋者",
+                "所有人都以为主角在查真相，其实她在训练一个能反噬资本的叙事黑箱。",
+                ["悬疑感", "高智感", "职场压迫", "视觉符号统一"],
+                "B站 / 小红书剧情向漫剧",
+                "喜欢赛博悬疑、女性成长和高概念设定的年轻受众",
+            ),
+            (
+                "c",
+                "替身协议",
+                "主角发现自己只是爆款叙事里的替身，于是反过来篡改整套人设规则。",
+                ["替身文学", "情感背叛", "规则反杀", "连续剧集扩展性强"],
+                "微信视频号 / 付费短剧",
+                "偏好情感冲突、身份错位和连续付费追更的人群",
+            ),
+        ]
 
-    def _build_fresh_project_state(self, form: Step1Form) -> dict[str, Any]:
-        state = dict(PIPELINE_RESET_STATE)
-        state.update(build_initial_agent_state(form))
-        return state
+        proposals = []
+        for proposal_id, title, hook, highlights, platform, audience in templates:
+            raw_text = (
+                f"方案 {proposal_id.upper()}：《{title}》\n"
+                f"项目：{project}\n"
+                f"创意 Brief：{idea}\n"
+                f"商业指令：{directive}\n"
+                f"一句话梗概：{hook}\n"
+                f"核心爽点：{'、'.join(highlights)}\n"
+                f"平台适配：{platform}\n"
+                f"受众定位：{audience}"
+            )
+            proposals.append(
+                {
+                    "id": proposal_id,
+                    "title": title,
+                    "hook": hook,
+                    "highlights": highlights,
+                    "platform": platform,
+                    "audience": audience,
+                    "raw_text": raw_text,
+                }
+            )
+        return proposals
+
+    def _build_world(self, state: dict, selected: str) -> str:
+        project = state.get("thread_id", "未命名项目")
+        idea = state.get("current_task", "一个高概念漫剧创意")
+        return (
+            f"【世界观框架】\n"
+            f"{project} 发生在一个内容平台、资本评审和个人命运被算法紧密绑定的近未来都市。\n\n"
+            f"【核心命题】\n"
+            f"{idea}\n\n"
+            f"【已选商业方案】\n"
+            f"{selected or '主角在强压环境里完成身份反杀，并把个人创伤转化成可连续推进的剧集动力。'}\n\n"
+            f"【剧集推进规则】\n"
+            f"- 每集开头必须有一个视觉钩子或误判场面。\n"
+            f"- 每集结尾留下一个新的身份、关系或规则反转。\n"
+            f"- 角色造型、色彩和道具服务于可复用的漫剧资产生产。"
+        )
+
+    def _build_characters(self, state: dict, selected: str, *, variant: bool = False) -> list[dict]:
+        accent = "银灰" if not variant else "暗红"
+        return [
+            {
+                "id": "lead",
+                "name": "林照",
+                "hairStyle": "利落中短发，镜头中保持冷静轮廓",
+                "hairColor": "黑色",
+                "eyeColor": "深棕",
+                "marks": f"左耳有{accent}色耳饰，象征她对系统规则的反向监听",
+                "heightRatio": "偏高挑，肩颈线干净，适合强控制感构图",
+                "outfits": ["深色长风衣 + 高领内搭", "白衬衫 + 黑色束腰马甲", "功能感短外套 + 数据终端"],
+            },
+            {
+                "id": "rival",
+                "name": "沈既白",
+                "hairStyle": "后梳短发，边缘整洁",
+                "hairColor": "深栗",
+                "eyeColor": "冷灰",
+                "marks": "右手无名指有旧戒痕，暗示被隐藏的盟约",
+                "heightRatio": "高瘦，正装线条强，压迫感明显",
+                "outfits": ["深灰西装 + 黑金镜框", "长款大衣 + 皮质手套", "无领黑衬衫 + 银色袖扣"],
+            },
+            {
+                "id": "ally",
+                "name": "阮秋",
+                "hairStyle": "微卷短发，行动感强",
+                "hairColor": "棕黑",
+                "eyeColor": "琥珀",
+                "marks": "手腕有数据纹身，负责把线索变成可执行策略",
+                "heightRatio": "中等偏高，动作轻快，适合信息流镜头",
+                "outfits": ["机能夹克 + 便携终端", "实验室工装外套", "连帽卫衣 + 数据挂件"],
+            },
+        ]
+
+    def _build_benchmarks(self, state: dict) -> str:
+        return (
+            "【爆款对标】\n"
+            "- 情绪入口：开场制造冤屈、背叛或身份错位，保证观众快速站队。\n"
+            "- 剧集结构：每集 3 个信息点，1 个反转点，1 个付费/追更钩子。\n"
+            "- 视觉资产：主角耳饰、反派戒痕、搭档数据纹身作为连续识别符号。\n\n"
+            "【质检改写方向】\n"
+            "- 删除解释性台词，改成动作和视觉证据。\n"
+            "- 每场戏只保留一个主冲突，避免信息过载。\n"
+            "- 结尾必须推进关系变化，而不是只抛设定。"
+        )
+
+    def _build_script(self, state: dict) -> str:
+        project = state.get("thread_id", "未命名项目")
+        idea = state.get("current_task", "一个高概念漫剧创意")
+        return (
+            f"# {project} 第一集：被系统误判的人\n\n"
+            f"## 开场钩子\n"
+            f"雨夜，林照站在巨大的平台审判屏前。屏幕弹出结论：她的创意被判定为剽窃。\n"
+            f"人群开始拍摄，热搜倒计时只剩 10 秒。\n\n"
+            f"## 第一场：公开处刑\n"
+            f"主持人要求林照当场道歉。林照没有辩解，只盯着屏幕角落一串异常编号。\n"
+            f"她低声说：这不是审判，这是提前写好的剧本。\n\n"
+            f"## 第二场：暗线盟友\n"
+            f"阮秋把一枚数据终端塞进她手里，终端显示：同样的误判在 72 小时内发生了 19 次。\n"
+            f"林照意识到，自己不是唯一的受害者，而是被选中的样本。\n\n"
+            f"## 第三场：反派入局\n"
+            f"沈既白出现，替平台给出和解条件：签字，消失，保留体面。\n"
+            f"林照看见他右手的戒痕，确认他和旧案有关。\n\n"
+            f"## 结尾反转\n"
+            f"林照点击终端，审判屏突然倒放。所有证据指向另一个名字：沈既白。\n"
+            f"屏幕黑掉前，只剩一句话：真正的剧本，现在开始。\n\n"
+            f"## 本集创意来源\n"
+            f"{idea}"
+        )
+
+    def _characters_to_text(self, characters: list[dict]) -> str:
+        return "\n\n".join(
+            f"角色：{item.get('name')}\n"
+            f"发型：{item.get('hairStyle')}\n"
+            f"发色：{item.get('hairColor')}\n"
+            f"瞳色：{item.get('eyeColor')}\n"
+            f"特征：{item.get('marks')}\n"
+            f"服装：{' / '.join(item.get('outfits', []))}"
+            for item in characters
+        )
+
+    def _first_proposal_text(self, state: dict) -> str:
+        proposals = state.get("proposal_options") or []
+        if proposals:
+            return proposals[0].get("raw_text", "")
+        return ""
+
+    def _selected_proposal_id(self, state: dict) -> str | None:
+        selected = state.get("selected_commercial_plan", "")
+        for proposal in state.get("proposal_options", []):
+            if selected == proposal.get("raw_text") or proposal.get("title", "") in selected:
+                return proposal.get("id")
+        return None
